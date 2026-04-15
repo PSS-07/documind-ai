@@ -1,0 +1,3 @@
+PDF → Text → Embeddings → Vector DB (FAISS)
+                              ↓
+User Question → Embed → Search → LLM → Answer
