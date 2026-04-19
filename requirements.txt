@@ -6,3 +6,5 @@ faiss-cpu
 pypdf
 ollama
 sentence-transformers
+langchain-openai
+openai
