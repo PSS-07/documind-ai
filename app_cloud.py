@@ -2,17 +2,22 @@ import streamlit as st
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.llms import Ollama
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
 import tempfile
 
 # -------------------------------
-# Page Config
+# Page Config + UI
 # -------------------------------
 st.set_page_config(page_title="DocuMind AI", layout="wide")
-st.title("📘 DocuMind AI")
-st.caption("💡 Chat with your PDFs using AI")
+
+st.markdown("""
+# 📘 DocuMind AI
+### 💬 Chat with your documents intelligently
+""")
+
+st.divider()
 
 # -------------------------------
 # Session State
@@ -20,34 +25,36 @@ st.caption("💡 Chat with your PDFs using AI")
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
 if "db" not in st.session_state:
     st.session_state.db = None
 
 # -------------------------------
-# Clear Chat
+# Sidebar (UI polish)
 # -------------------------------
-if st.button("🗑️ Clear Chat"):
-    st.session_state.messages = []
-    st.session_state.chat_history = []
-    st.rerun()
+with st.sidebar:
+    st.header("⚙️ Controls")
+
+    if st.button("🧹 Clear Chat"):
+        st.session_state.messages = []
+        st.rerun()
+
+    st.markdown("---")
+    st.caption("Upload PDFs and start chatting")
 
 # -------------------------------
-# Upload PDF
+# Upload PDFs
 # -------------------------------
 uploaded_files = st.file_uploader(
-    "Upload PDFs",
+    "📂 Upload PDFs",
     type="pdf",
     accept_multiple_files=True
 )
 
 # -------------------------------
-# Process PDF (ONCE)
+# Process PDFs
 # -------------------------------
-if uploaded_files and st.session_state.get("db") is None:
-    with st.spinner("Processing PDFs..."):
+if uploaded_files and st.session_state.db is None:
+    with st.spinner("📄 Processing PDFs..."):
 
         all_docs = []
 
@@ -71,7 +78,7 @@ if uploaded_files and st.session_state.get("db") is None:
         db = FAISS.from_documents(split_docs, embeddings)
 
         st.session_state.db = db
-        st.success("✅ All PDFs processed!")
+        st.success("✅ PDFs processed successfully!")
 
 # -------------------------------
 # Display Chat
@@ -83,12 +90,13 @@ for msg in st.session_state.messages:
 # -------------------------------
 # Chat Input
 # -------------------------------
-if prompt := st.chat_input("Ask something..."):
+query = st.chat_input("Ask a question about your PDFs...")
 
-    # Show user message
-    st.session_state.messages.append({"role": "user", "content": prompt})
+if query:
+    # User message
+    st.session_state.messages.append({"role": "user", "content": query})
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(query)
 
     if st.session_state.db is None:
         with st.chat_message("assistant"):
@@ -96,67 +104,66 @@ if prompt := st.chat_input("Ask something..."):
     else:
         retriever = st.session_state.db.as_retriever(
             search_type="similarity",
-            search_kwargs={"k": 4}
+            search_kwargs={"k": 5}
         )
-
-        from langchain_openai import ChatOpenAI
 
         llm = ChatOpenAI(
             model="gpt-3.5-turbo",
             temperature=0
         )
 
-        # 🔍 Retrieve relevant chunks
-        docs = retriever.invoke(prompt)
+        # 🔍 Retrieve docs
+        docs = retriever.invoke(query)
 
-        # 🔥 Context Filtering (limit size)
-        context = "\n\n".join([doc.page_content for doc in docs[:3]])
+        # 🔥 Build context
+        context = "\n\n".join([doc.page_content for doc in docs[:4]])
 
-        # 🧠 Format chat history
-        history_text = "\n".join(
-            [f"User: {msg['user']}\nAssistant: {msg['assistant']}"
-             for msg in st.session_state.chat_history]
-        )
+        # 🧠 Chat history (last 5 messages)
+        history = "\n".join([
+            f"{m['role']}: {m['content']}"
+            for m in st.session_state.messages[-6:]
+        ])
 
-        # 🔥 Strong Prompt
+        # -------------------------------
+        # Improved Prompt
+        # -------------------------------
         template = """
-You are an intelligent AI assistant.
+You are an expert AI assistant for analyzing documents.
 
-Answer strictly based on the provided context and conversation history.
-
-Rules:
-- Do NOT make up answers
-- If unsure, say "I don't know based on the document"
-- Keep answers clear and structured
+Guidelines:
+- Answer ONLY using the provided context
+- If answer is not in context, say: "I couldn't find this in the document"
+- Keep answers clear, structured, and concise
 - Use bullet points when helpful
+- Explain concepts simply when needed
 
 Chat History:
-{chat_history}
+{history}
 
 Context:
 {context}
 
 Question:
 {question}
+
+Answer:
 """
 
-        prompt_template = ChatPromptTemplate.from_template(template)
-
-        final_prompt = prompt_template.format(
-            chat_history=history_text,
+        prompt = ChatPromptTemplate.from_template(template).format(
+            history=history,
             context=context,
-            question=prompt
+            question=query
         )
 
         # -------------------------------
-        # Streaming Response
+        # Generate Response
         # -------------------------------
         with st.chat_message("assistant"):
             response_placeholder = st.empty()
             full_response = ""
 
             try:
-                for chunk in llm.stream(final_prompt):
+                for chunk in llm.stream(prompt):
                     full_response += chunk
                     response_placeholder.markdown(full_response + "▌")
 
@@ -166,12 +173,17 @@ Question:
                 full_response = f"❌ Error: {str(e)}"
                 st.error(full_response)
 
-        # Save history
-        st.session_state.messages.append(
-            {"role": "assistant", "content": full_response}
-        )
+        # -------------------------------
+        # 📄 Source Display (NEW)
+        # -------------------------------
+        with st.expander("📄 Sources"):
+            for i, doc in enumerate(docs):
+                page = doc.metadata.get("page", "N/A")
+                st.markdown(f"**Source {i+1} (Page {page})**")
+                st.write(doc.page_content[:300] + "...")
 
-        st.session_state.chat_history.append({
-            "user": prompt,
-            "assistant": full_response
+        # Save response
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": full_response
         })
