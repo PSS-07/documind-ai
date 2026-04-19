@@ -37,33 +37,41 @@ if st.button("🗑️ Clear Chat"):
 # -------------------------------
 # Upload PDF
 # -------------------------------
-uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
+uploaded_files = st.file_uploader(
+    "Upload PDFs",
+    type="pdf",
+    accept_multiple_files=True
+)
 
 # -------------------------------
 # Process PDF (ONCE)
 # -------------------------------
-if uploaded_file and st.session_state.db is None:
-    with st.spinner("Processing PDF..."):
-        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
-            tmp_file.write(uploaded_file.read())
-            file_path = tmp_file.name
+if uploaded_files and st.session_state.get("db") is None:
+    with st.spinner("Processing PDFs..."):
 
-        loader = PyPDFLoader(file_path)
-        docs = loader.load()
+        all_docs = []
 
-        # 🔥 Smart Chunking
+        for uploaded_file in uploaded_files:
+            with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+                tmp_file.write(uploaded_file.read())
+                file_path = tmp_file.name
+
+            loader = PyPDFLoader(file_path)
+            docs = loader.load()
+            all_docs.extend(docs)
+
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=500,
             chunk_overlap=100
         )
 
-        split_docs = text_splitter.split_documents(docs)
+        split_docs = text_splitter.split_documents(all_docs)
 
         embeddings = HuggingFaceEmbeddings()
         db = FAISS.from_documents(split_docs, embeddings)
 
         st.session_state.db = db
-        st.success("✅ PDF processed!")
+        st.success("✅ All PDFs processed!")
 
 # -------------------------------
 # Display Chat
