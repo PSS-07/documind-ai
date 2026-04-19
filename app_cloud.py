@@ -164,10 +164,9 @@ Answer:
 
             try:
                 for chunk in llm.stream(prompt):
-                    full_response += chunk
-                    response_placeholder.markdown(full_response + "▌")
-
-                response_placeholder.markdown(full_response)
+                    if hasattr(chunk, "content"):
+                        full_response += chunk.content
+                        response_placeholder.markdown(full_response + "▌")
 
             except Exception as e:
                 full_response = f"❌ Error: {str(e)}"
