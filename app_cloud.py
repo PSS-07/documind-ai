@@ -167,6 +167,12 @@ Answer:
                     if hasattr(chunk, "content"):
                         full_response += chunk.content
                         response_placeholder.markdown(full_response + "▌")
+                        
+                # After streaming completes
+                if not full_response.strip():
+                    full_response = "⚠️ No meaningful answer found in document."
+
+                response_placeholder.markdown(full_response)
 
             except Exception as e:
                 full_response = f"❌ Error: {str(e)}"
