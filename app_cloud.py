@@ -8,15 +8,101 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import ChatPromptTemplate
 
 # -------------------------------
-# Page Config
+# PAGE CONFIG
 # -------------------------------
-st.set_page_config(page_title="DocuMind AI", layout="wide")
-
-st.title("📘 DocuMind AI")
-st.caption("💡 Chat with your PDFs using AI")
+st.set_page_config(
+    page_title="DocuMind AI",
+    page_icon="📘",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # -------------------------------
-# Session State
+# PREMIUM UI STYLING
+# -------------------------------
+st.markdown("""
+<style>
+/* Background */
+[data-testid="stAppViewContainer"] {
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    color: #e2e8f0;
+}
+
+/* Chat bubbles */
+[data-testid="stChatMessage"] {
+    border-radius: 15px;
+    padding: 12px;
+    margin-bottom: 10px;
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease-in-out;
+}
+
+[data-testid="stChatMessage"]:hover {
+    transform: scale(1.01);
+}
+
+/* User message */
+[data-testid="stChatMessage"]:has(div[data-testid="stMarkdownContainer"]:first-child) {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: white;
+}
+
+/* Assistant message */
+[data-testid="stChatMessage"]:not(:has(div[data-testid="stMarkdownContainer"]:first-child)) {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* Upload box */
+[data-testid="stFileUploader"] {
+    border: 2px dashed #3b82f6;
+    border-radius: 15px;
+    padding: 20px;
+}
+
+/* Input */
+[data-testid="stChatInput"] {
+    border-radius: 20px;
+    background-color: #1e293b;
+}
+
+/* Buttons */
+button {
+    border-radius: 12px !important;
+    background: linear-gradient(135deg, #3b82f6, #6366f1);
+    color: white !important;
+    border: none !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# -------------------------------
+# HERO SECTION
+# -------------------------------
+st.markdown("""
+<div style="text-align:center; padding: 20px 0;">
+    <h1 style="font-size: 42px;">📘 DocuMind AI</h1>
+    <p style="color: #94a3b8; font-size:18px;">
+        Chat with your documents like never before 🚀
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+# -------------------------------
+# SIDEBAR
+# -------------------------------
+with st.sidebar:
+    st.header("⚙️ Control Panel")
+
+    if st.button("🗑️ Clear Chat"):
+        st.session_state.messages = []
+        st.session_state.chat_history = []
+        st.rerun()
+
+    st.markdown("---")
+    st.caption("Upload PDFs and start chatting")
+
+# -------------------------------
+# SESSION STATE
 # -------------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -28,27 +114,21 @@ if "db" not in st.session_state:
     st.session_state.db = None
 
 # -------------------------------
-# Clear Chat
+# FILE UPLOAD
 # -------------------------------
-if st.button("🗑️ Clear Chat"):
-    st.session_state.messages = []
-    st.session_state.chat_history = []
-    st.rerun()
+st.markdown("### 📂 Upload your PDFs")
 
-# -------------------------------
-# Upload PDFs
-# -------------------------------
 uploaded_files = st.file_uploader(
-    "Upload PDFs",
+    "Drag & drop or browse",
     type="pdf",
     accept_multiple_files=True
 )
 
 # -------------------------------
-# Process PDFs
+# PROCESS PDFs
 # -------------------------------
 if uploaded_files and st.session_state.db is None:
-    with st.spinner("📄 Processing PDFs..."):
+    with st.spinner("🔄 Processing PDFs..."):
 
         all_docs = []
 
@@ -61,12 +141,12 @@ if uploaded_files and st.session_state.db is None:
             docs = loader.load()
             all_docs.extend(docs)
 
-        text_splitter = RecursiveCharacterTextSplitter(
+        splitter = RecursiveCharacterTextSplitter(
             chunk_size=500,
             chunk_overlap=100
         )
 
-        split_docs = text_splitter.split_documents(all_docs)
+        split_docs = splitter.split_documents(all_docs)
 
         embeddings = OpenAIEmbeddings()
         db = Chroma.from_documents(split_docs, embeddings)
@@ -75,57 +155,51 @@ if uploaded_files and st.session_state.db is None:
         st.success("✅ PDFs processed successfully!")
 
 # -------------------------------
-# Display Chat
+# DISPLAY CHAT
 # -------------------------------
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
 # -------------------------------
-# Chat Input
+# CHAT INPUT
 # -------------------------------
-if prompt := st.chat_input("💬 Ask something about your documents..."):
+if st.session_state.db is None:
+    prompt = st.chat_input("Upload PDFs first...", disabled=True)
+else:
+    prompt = st.chat_input("💬 Ask something about your documents...")
 
-    # Save user message
-    st.session_state.messages.append({
-        "role": "user",
-        "content": prompt
-    })
+# -------------------------------
+# CHAT LOGIC
+# -------------------------------
+if prompt:
+
+    # USER MESSAGE
+    st.session_state.messages.append({"role": "user", "content": prompt})
 
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    if st.session_state.db is None:
-        with st.chat_message("assistant"):
-            st.warning("⚠️ Please upload a PDF first.")
+    retriever = st.session_state.db.as_retriever(
+        search_type="similarity",
+        search_kwargs={"k": 4}
+    )
 
-    else:
-        retriever = st.session_state.db.as_retriever(
-            search_type="similarity",
-            search_kwargs={"k": 4}
-        )
+    llm = ChatOpenAI(
+        model="gpt-3.5-turbo",
+        temperature=0
+    )
 
-        llm = ChatOpenAI(
-            model="gpt-3.5-turbo",
-            temperature=0
-        )
+    docs = retriever.invoke(prompt)
 
-        # Retrieve relevant chunks
-        docs = retriever.invoke(prompt)
+    context = "\n\n".join([doc.page_content for doc in docs[:3]])
 
-        # Limit context
-        context = "\n\n".join([
-            doc.page_content for doc in docs[:3]
-        ])
+    history_text = "\n".join([
+        f"User: {h['user']}\nAssistant: {h['assistant']}"
+        for h in st.session_state.chat_history
+    ])
 
-        # Chat history
-        history_text = "\n".join([
-            f"User: {msg['user']}\nAssistant: {msg['assistant']}"
-            for msg in st.session_state.chat_history
-        ])
-
-        # Prompt template
-        template = """
+    template = """
 You are an intelligent AI assistant.
 
 Answer strictly based on the provided context and conversation history.
@@ -146,52 +220,63 @@ Question:
 {question}
 """
 
-        prompt_template = ChatPromptTemplate.from_template(template)
+    prompt_template = ChatPromptTemplate.from_template(template)
 
-        final_prompt = prompt_template.format(
-            chat_history=history_text,
-            context=context,
-            question=prompt
-        )
+    final_prompt = prompt_template.format(
+        chat_history=history_text,
+        context=context,
+        question=prompt
+    )
 
-        # -------------------------------
-        # Streaming Response
-        # -------------------------------
-        with st.chat_message("assistant"):
-            response_placeholder = st.empty()
-            full_response = ""
+    # -------------------------------
+    # ASSISTANT RESPONSE
+    # -------------------------------
+    with st.chat_message("assistant"):
+        placeholder = st.empty()
+        full_response = ""
 
+        with st.spinner("Thinking... 🤖"):
             try:
                 for chunk in llm.stream(final_prompt):
                     if hasattr(chunk, "content"):
                         full_response += chunk.content
-                        response_placeholder.markdown(full_response + "▌")
+                        placeholder.markdown(full_response + "▌")
 
                 if not full_response.strip():
                     full_response = "⚠️ No answer found in document."
 
-                response_placeholder.markdown(full_response)
+                placeholder.markdown(full_response)
 
             except Exception as e:
                 full_response = f"❌ Error: {str(e)}"
                 st.error(full_response)
 
-        # Save response
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": full_response
-        })
+    # SAVE HISTORY
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": full_response
+    })
 
-        st.session_state.chat_history.append({
-            "user": prompt,
-            "assistant": full_response
-        })
+    st.session_state.chat_history.append({
+        "user": prompt,
+        "assistant": full_response
+    })
 
-        # -------------------------------
-        # Sources
-        # -------------------------------
-        with st.expander("📄 Sources"):
-            for i, doc in enumerate(docs):
-                page = doc.metadata.get("page", "N/A")
-                st.markdown(f"**Source {i+1} (Page {page})**")
-                st.write(doc.page_content[:300] + "...")
+    # -------------------------------
+    # SOURCES
+    # -------------------------------
+    with st.expander("📄 Sources"):
+        for i, doc in enumerate(docs):
+            page = doc.metadata.get("page", "N/A")
+            st.markdown(f"**Source {i+1} (Page {page})**")
+            st.write(doc.page_content[:300] + "...")
+
+# -------------------------------
+# FOOTER
+# -------------------------------
+st.markdown("""
+<hr>
+<p style='text-align:center; color:gray;'>
+Built with ❤️ using AI • DocuMind
+</p>
+""", unsafe_allow_html=True)
