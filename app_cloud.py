@@ -72,18 +72,33 @@ with st.sidebar:
         st.rerun()
 
     st.markdown("---")
+
     st.markdown("### 📂 Upload Documents")
     st.caption("Supports multiple PDFs")
 
     st.markdown("---")
+
     st.markdown("### 🚀 About")
     st.caption("DocuMind AI lets you chat with PDFs using AI.")
 
 # -------------------------------
-# Upload PDFs
+# Upload Section (Card)
 # -------------------------------
+st.markdown("""
+<div style="
+    padding:20px;
+    border-radius:16px;
+    border:1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04);
+    backdrop-filter: blur(10px);
+    margin-bottom:20px;
+">
+<h4>📂 Upload PDFs</h4>
+</div>
+""", unsafe_allow_html=True)
+
 uploaded_files = st.file_uploader(
-    "📂 Upload PDFs",
+    "",
     type="pdf",
     accept_multiple_files=True
 )
@@ -93,7 +108,6 @@ uploaded_files = st.file_uploader(
 # -------------------------------
 if uploaded_files and st.session_state.db is None:
     with st.spinner("📄 Processing PDFs..."):
-
         all_docs = []
 
         for uploaded_file in uploaded_files:
@@ -119,6 +133,17 @@ if uploaded_files and st.session_state.db is None:
         st.success("✅ PDFs processed successfully!")
 
 # -------------------------------
+# Empty State (Nice UX)
+# -------------------------------
+if not st.session_state.messages:
+    st.markdown("""
+    <div style="text-align:center; margin-top:40px; color:#94a3b8;">
+        <h3>👋 Welcome to DocuMind</h3>
+        <p>Upload your PDFs and start asking questions</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+# -------------------------------
 # Display Chat
 # -------------------------------
 for msg in st.session_state.messages:
@@ -128,16 +153,18 @@ for msg in st.session_state.messages:
 # -------------------------------
 # Chat Input
 # -------------------------------
+st.markdown("### 💬 Chat")
+
 query = st.chat_input("💬 Ask anything about your documents...")
 
 if query:
     st.session_state.messages.append({"role": "user", "content": query})
 
-    with st.chat_message("user"):
+    with st.chat_message("user", avatar="🧑"):
         st.markdown(query)
 
     if st.session_state.db is None:
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar="🤖"):
             st.warning("⚠️ Please upload a PDF first.")
 
     else:
@@ -146,11 +173,16 @@ if query:
             search_kwargs={"k": 5}
         )
 
-        llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+        llm = ChatOpenAI(
+            model="gpt-3.5-turbo",
+            temperature=0
+        )
 
         docs = retriever.invoke(query)
 
-        context = "\n\n".join([doc.page_content for doc in docs[:4]])
+        context = "\n\n".join([
+            doc.page_content for doc in docs[:4]
+        ])
 
         history = "\n".join([
             f"{m['role']}: {m['content']}"
@@ -181,7 +213,7 @@ Answer:
             question=query
         )
 
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar="🤖"):
             response_placeholder = st.empty()
             full_response = ""
 
@@ -190,7 +222,7 @@ Answer:
                     for chunk in llm.stream(prompt):
                         if hasattr(chunk, "content"):
                             full_response += chunk.content
-                            response_placeholder.markdown(full_response + "▌")
+                            response_placeholder.markdown(full_response + " ▌")
 
                 if not full_response.strip():
                     full_response = "⚠️ No meaningful answer found in document."
@@ -217,8 +249,8 @@ Answer:
 # Footer
 # -------------------------------
 st.markdown("""
-<hr style="margin-top:50px">
-<p style='text-align:center; color:#64748b;'>
-Built with ❤️ using AI • DocuMind
+<hr style="margin-top:50px; opacity:0.2;">
+<p style='text-align:center; color:#64748b; font-size:14px;'>
+⚡ Powered by AI • Built with ❤️ by Parth
 </p>
 """, unsafe_allow_html=True)
