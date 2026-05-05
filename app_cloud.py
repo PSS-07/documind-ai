@@ -8,14 +8,47 @@ from langchain_openai import ChatOpenAI
 import tempfile
 
 # -------------------------------
-# Page Config + UI
+# CSS
 # -------------------------------
-st.set_page_config(page_title="DocuMind AI", layout="wide")
-
 st.markdown("""
-# 📘 DocuMind AI
-### 💬 Chat with your documents intelligently
-""")
+<style>
+.stApp {
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    color: white;
+}
+[data-testid="stChatMessage"] {
+    border-radius: 15px;
+    padding: 12px;
+    margin-bottom: 10px;
+    backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+}
+section[data-testid="stSidebar"] {
+    background: rgba(15, 23, 42, 0.95);
+}
+button {
+    border-radius: 10px !important;
+}
+[data-testid="stFileUploader"] {
+    border: 2px dashed rgba(255,255,255,0.2);
+    padding: 15px;
+    border-radius: 12px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# -------------------------------
+# Header
+# -------------------------------
+st.markdown("""
+<h1 style='text-align: center;'>
+📘 <span style="color:#38bdf8;">DocuMind AI</span>
+</h1>
+<p style='text-align: center; color: #94a3b8; font-size:18px;'>
+Chat with your documents like never before
+</p>
+""", unsafe_allow_html=True)
 
 st.divider()
 
@@ -29,17 +62,22 @@ if "db" not in st.session_state:
     st.session_state.db = None
 
 # -------------------------------
-# Sidebar (UI polish)
+# Sidebar
 # -------------------------------
 with st.sidebar:
-    st.header("⚙️ Controls")
+    st.markdown("## ⚙️ Control Panel")
 
     if st.button("🧹 Clear Chat"):
         st.session_state.messages = []
         st.rerun()
 
     st.markdown("---")
-    st.caption("Upload PDFs and start chatting")
+    st.markdown("### 📂 Upload Documents")
+    st.caption("Supports multiple PDFs")
+
+    st.markdown("---")
+    st.markdown("### 🚀 About")
+    st.caption("DocuMind AI lets you chat with PDFs using AI.")
 
 # -------------------------------
 # Upload PDFs
@@ -90,52 +128,40 @@ for msg in st.session_state.messages:
 # -------------------------------
 # Chat Input
 # -------------------------------
-query = st.chat_input("Ask a question about your PDFs...")
+query = st.chat_input("💬 Ask anything about your documents...")
 
 if query:
-    # User message
     st.session_state.messages.append({"role": "user", "content": query})
+
     with st.chat_message("user"):
         st.markdown(query)
 
     if st.session_state.db is None:
         with st.chat_message("assistant"):
             st.warning("⚠️ Please upload a PDF first.")
+
     else:
         retriever = st.session_state.db.as_retriever(
             search_type="similarity",
             search_kwargs={"k": 5}
         )
 
-        llm = ChatOpenAI(
-            model="gpt-3.5-turbo",
-            temperature=0
-        )
+        llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
 
-        # 🔍 Retrieve docs
         docs = retriever.invoke(query)
 
-        # 🔥 Build context
         context = "\n\n".join([doc.page_content for doc in docs[:4]])
 
-        # 🧠 Chat history (last 5 messages)
         history = "\n".join([
             f"{m['role']}: {m['content']}"
             for m in st.session_state.messages[-6:]
         ])
 
-        # -------------------------------
-        # Improved Prompt
-        # -------------------------------
         template = """
-You are an expert AI assistant for analyzing documents.
+You are an expert AI assistant.
 
-Guidelines:
-- Answer ONLY using the provided context
-- If answer is not in context, say: "I couldn't find this in the document"
-- Keep answers clear, structured, and concise
-- Use bullet points when helpful
-- Explain concepts simply when needed
+Answer ONLY using the context.
+If not found, say: "I couldn't find this in the document".
 
 Chat History:
 {history}
@@ -155,20 +181,17 @@ Answer:
             question=query
         )
 
-        # -------------------------------
-        # Generate Response
-        # -------------------------------
         with st.chat_message("assistant"):
             response_placeholder = st.empty()
             full_response = ""
 
             try:
-                for chunk in llm.stream(prompt):
-                    if hasattr(chunk, "content"):
-                        full_response += chunk.content
-                        response_placeholder.markdown(full_response + "▌")
-                        
-                # After streaming completes
+                with st.spinner("🤖 Thinking..."):
+                    for chunk in llm.stream(prompt):
+                        if hasattr(chunk, "content"):
+                            full_response += chunk.content
+                            response_placeholder.markdown(full_response + "▌")
+
                 if not full_response.strip():
                     full_response = "⚠️ No meaningful answer found in document."
 
@@ -178,17 +201,24 @@ Answer:
                 full_response = f"❌ Error: {str(e)}"
                 st.error(full_response)
 
-        # -------------------------------
-        # 📄 Source Display (NEW)
-        # -------------------------------
+        # Sources
         with st.expander("📄 Sources"):
             for i, doc in enumerate(docs):
                 page = doc.metadata.get("page", "N/A")
                 st.markdown(f"**Source {i+1} (Page {page})**")
                 st.write(doc.page_content[:300] + "...")
 
-        # Save response
         st.session_state.messages.append({
             "role": "assistant",
             "content": full_response
         })
+
+# -------------------------------
+# Footer
+# -------------------------------
+st.markdown("""
+<hr style="margin-top:50px">
+<p style='text-align:center; color:#64748b;'>
+Built with ❤️ using AI • DocuMind
+</p>
+""", unsafe_allow_html=True)
