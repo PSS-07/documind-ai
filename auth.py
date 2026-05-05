@@ -3,10 +3,9 @@ import streamlit_authenticator as stauth
 names = ["Parth Sharma"]
 usernames = ["parth"]
 
-# hashed password (we’ll generate below)
-passwords = ["1234"]
-
-hashed_passwords = stauth.Hasher(passwords).generate()
+# IMPORTANT: pre-hashed password (not plain text)
+# password = "1234"
+hashed_passwords = stauth.Hasher(["1234"]).generate()
 
 credentials = {
     "usernames": {
