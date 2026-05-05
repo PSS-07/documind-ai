@@ -124,7 +124,7 @@ if prompt := st.chat_input("💬 Ask something about your documents..."):
             for msg in st.session_state.chat_history
         ])
 
-        # Prompt
+        # Prompt template
         template = """
 You are an intelligent AI assistant.
 
