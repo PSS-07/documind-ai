@@ -1,16 +1,17 @@
 import streamlit as st
+import tempfile
+
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.llms import Ollama
+from langchain_community.vectorstores import Chroma
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import ChatPromptTemplate
-import tempfile
 
 # -------------------------------
 # Page Config
 # -------------------------------
 st.set_page_config(page_title="DocuMind AI", layout="wide")
+
 st.title("📘 DocuMind AI")
 st.caption("💡 Chat with your PDFs using AI")
 
@@ -35,7 +36,7 @@ if st.button("🗑️ Clear Chat"):
     st.rerun()
 
 # -------------------------------
-# Upload PDF
+# Upload PDFs
 # -------------------------------
 uploaded_files = st.file_uploader(
     "Upload PDFs",
@@ -44,10 +45,10 @@ uploaded_files = st.file_uploader(
 )
 
 # -------------------------------
-# Process PDF (ONCE)
+# Process PDFs
 # -------------------------------
-if uploaded_files and st.session_state.get("db") is None:
-    with st.spinner("Processing PDFs..."):
+if uploaded_files and st.session_state.db is None:
+    with st.spinner("📄 Processing PDFs..."):
 
         all_docs = []
 
@@ -67,11 +68,11 @@ if uploaded_files and st.session_state.get("db") is None:
 
         split_docs = text_splitter.split_documents(all_docs)
 
-        embeddings = HuggingFaceEmbeddings()
-        db = FAISS.from_documents(split_docs, embeddings)
+        embeddings = OpenAIEmbeddings()
+        db = Chroma.from_documents(split_docs, embeddings)
 
         st.session_state.db = db
-        st.success("✅ All PDFs processed!")
+        st.success("✅ PDFs processed successfully!")
 
 # -------------------------------
 # Display Chat
@@ -83,37 +84,47 @@ for msg in st.session_state.messages:
 # -------------------------------
 # Chat Input
 # -------------------------------
-if prompt := st.chat_input("Ask something..."):
+if prompt := st.chat_input("💬 Ask something about your documents..."):
 
-    # Show user message
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    # Save user message
+    st.session_state.messages.append({
+        "role": "user",
+        "content": prompt
+    })
+
     with st.chat_message("user"):
         st.markdown(prompt)
 
     if st.session_state.db is None:
         with st.chat_message("assistant"):
             st.warning("⚠️ Please upload a PDF first.")
+
     else:
         retriever = st.session_state.db.as_retriever(
             search_type="similarity",
             search_kwargs={"k": 4}
         )
 
-        llm = Ollama(model="mistral")
-
-        # 🔍 Retrieve relevant chunks
-        docs = retriever.invoke(prompt)
-
-        # 🔥 Context Filtering (limit size)
-        context = "\n\n".join([doc.page_content for doc in docs[:3]])
-
-        # 🧠 Format chat history
-        history_text = "\n".join(
-            [f"User: {msg['user']}\nAssistant: {msg['assistant']}"
-             for msg in st.session_state.chat_history]
+        llm = ChatOpenAI(
+            model="gpt-3.5-turbo",
+            temperature=0
         )
 
-        # 🔥 Strong Prompt
+        # Retrieve relevant chunks
+        docs = retriever.invoke(prompt)
+
+        # Limit context
+        context = "\n\n".join([
+            doc.page_content for doc in docs[:3]
+        ])
+
+        # Chat history
+        history_text = "\n".join([
+            f"User: {msg['user']}\nAssistant: {msg['assistant']}"
+            for msg in st.session_state.chat_history
+        ])
+
+        # Prompt
         template = """
 You are an intelligent AI assistant.
 
@@ -152,8 +163,12 @@ Question:
 
             try:
                 for chunk in llm.stream(final_prompt):
-                    full_response += chunk
-                    response_placeholder.markdown(full_response + "▌")
+                    if hasattr(chunk, "content"):
+                        full_response += chunk.content
+                        response_placeholder.markdown(full_response + "▌")
+
+                if not full_response.strip():
+                    full_response = "⚠️ No answer found in document."
 
                 response_placeholder.markdown(full_response)
 
@@ -161,12 +176,22 @@ Question:
                 full_response = f"❌ Error: {str(e)}"
                 st.error(full_response)
 
-        # Save history
-        st.session_state.messages.append(
-            {"role": "assistant", "content": full_response}
-        )
+        # Save response
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": full_response
+        })
 
         st.session_state.chat_history.append({
             "user": prompt,
             "assistant": full_response
         })
+
+        # -------------------------------
+        # Sources
+        # -------------------------------
+        with st.expander("📄 Sources"):
+            for i, doc in enumerate(docs):
+                page = doc.metadata.get("page", "N/A")
+                st.markdown(f"**Source {i+1} (Page {page})**")
+                st.write(doc.page_content[:300] + "...")
